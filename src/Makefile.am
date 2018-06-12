@@ -43,6 +43,7 @@ GRIDCOIN_CORE_H = \
   addrman.h \
   alert.h \
   amount.h \
+  core_io.h \
   gridcoin/appcache.h \
   gridcoin/backup.h \
   gridcoin/beacon.h \
