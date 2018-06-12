@@ -43,13 +43,22 @@ GRIDCOIN_CORE_H = \
   addrman.h \
   alert.h \
   amount.h \
-  appcache.h \
-  backup.h \
+  gridcoin/appcache.h \
+  gridcoin/backup.h \
+  gridcoin/beacon.h \
+  gridcoin/block.h \
+  gridcoin/boinc.h \
+  gridcoin/contract.h \
+  gridcoin/cpid.h \
+  gridcoin/fwd.h \
+  gridcoin/global_objects.hpp \
+  gridcoin/global_objects_noui.hpp \
+  gridcoin/gridcoin.h \
+  gridcoin/neuralnet.h \
+  gridcoin/polls.h \
+  gridcoin/tally.h \
   base58.h \
-  beacon.h \
   bignum.h \
-  block.h \
-  boinc.h \
   checkpoints.h \
   checkqueue.h \
   coincontrol.h \
@@ -57,18 +66,11 @@ GRIDCOIN_CORE_H = \
   compat/byteswap.h \
   compat/endian.h \
   compat/sanity.h \
-  contract/polls.h \
-  contract/contract.h \
-  cpid.h \
   crypter.h \
   crypto/common.h \
   cuckoocache.h \
   db.h \
   fs.h \
-  fwd.h \
-  global_objects.hpp \
-  global_objects_noui.hpp \
-  gridcoin.h \
   grcrestarter.h \
   indirectmap.h \
   init.h \
@@ -82,7 +84,6 @@ GRIDCOIN_CORE_H = \
   memusage.h \
   miner.h \
   mruset.h \
-  neuralnet.h \
   netbase.h \
   net.h \
   pbkdf2.h \
@@ -103,7 +104,6 @@ GRIDCOIN_CORE_H = \
   support/cleanse.h \
   support/lockedpool.h \
   sync.h \
-  tally.h \
   threadinterrupt.h \
   threadsafety.h \
   tinyformat.h \
@@ -122,18 +122,21 @@ GRIDCOIN_CORE_H = \
 
 GRIDCOIN_CORE_CPP = addrman.cpp \
   alert.cpp \
-  appcache.cpp \
-  backup.cpp \
-  beacon.cpp \
-  block.cpp \
-  boinc.cpp \
   checkpoints.cpp \
   compat/glibc_sanity.cpp \
   compat/glibcxx_sanity.cpp \
   compat/strnlen.cpp \
-  contract/polls.cpp \
-  contract/contract.cpp \
-  cpid.cpp \
+  gridcoin/appcache.cpp \
+  gridcoin/backup.cpp \
+  gridcoin/beacon.cpp \
+  gridcoin/block.cpp \
+  gridcoin/boinc.cpp \
+  gridcoin/contract.cpp \
+  gridcoin/cpid.cpp \
+  gridcoin/polls.cpp \
+  gridcoin/rpccontract.cpp \
+  gridcoin/rpcdataacq.cpp \
+  gridcoin/tally.cpp \
   crypter.cpp \
   db.cpp \
   fs.cpp \
@@ -150,7 +153,6 @@ GRIDCOIN_CORE_CPP = addrman.cpp \
   noui.cpp \
   pbkdf2.cpp \
   protocol.cpp \
-  contract/rpccontract.cpp \
   rpcblockchain.cpp \
   rpcclient.cpp \
   rpcdump.cpp \
@@ -160,13 +162,11 @@ GRIDCOIN_CORE_CPP = addrman.cpp \
   rpcrawtransaction.cpp \
   rpcserver.cpp \
   rpcwallet.cpp \
-  rpcdataacq.cpp \
   script.cpp \
   scrypt.cpp \
   support/cleanse.cpp \
   support/lockedpool.cpp \
   sync.cpp \
-  tally.cpp \
   threadinterrupt.cpp \
   txdb-leveldb.cpp \
   util.cpp \
@@ -194,7 +194,7 @@ libgridcoin_util_a_CPPFLAGS = $(AM_CPPFLAGS) $(GRIDCOIN_INCLUDES)
 libgridcoin_util_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libgridcoin_util_a_SOURCES = $(GRIDCOIN_CORE_CPP) \
     grcrestarter_stub.cpp \
-    neuralnet_stub.cpp \
+    gridcoin/neuralnet_stub.cpp \
     $(GRIDCOIN_CORE_H)
 
 if TARGET_WINDOWS
@@ -204,7 +204,7 @@ endif
 nodist_libgridcoin_util_a_SOURCES = $(srcdir)/obj/build.h
 
 # gridcoinresearchd binary #
-gridcoinresearchd_SOURCES = gridcoinresearchd.cpp
+gridcoinresearchd_SOURCES = gridcoin/gridcoinresearchd.cpp
 gridcoinresearchd_CPPFLAGS = $(AM_CPPFLAGS) $(GRIDCOIN_INCLUDES)
 gridcoinresearchd_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 gridcoinresearchd_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)

@@ -2,8 +2,8 @@
 #include "main.h"
 #include "rpcserver.h"
 #include "rpcclient.h"
-#include "contract/contract.h"
-#include "contract/polls.h"
+#include "contract.h"
+#include "polls.h"
 
 #include <utility>
 #include <string>

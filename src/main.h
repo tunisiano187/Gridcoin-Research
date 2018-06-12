@@ -12,7 +12,7 @@
 #include "util.h"
 #include "amount.h"
 
-#include "global_objects_noui.hpp"
+#include "gridcoin/global_objects_noui.hpp"
 
 #include <map>
 #include <unordered_map>
