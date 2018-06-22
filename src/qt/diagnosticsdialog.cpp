@@ -1,7 +1,7 @@
 #include "main.h"
-#include "util.h"
 #include "gridcoin/boinc.h"
 #include "gridcoin/appcache.h"
+#include "util.h"
 
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>

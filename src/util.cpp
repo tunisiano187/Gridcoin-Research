@@ -3,13 +3,13 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "util.h"
+#include "netbase.h" // for AddTimeData
 #include "amount.h"
 #include "sync.h"
 #include "strlcpy.h"
 #include "version.h"
-#include "netbase.h" // for AddTimeData
 #include "ui_interface.h"
+#include "util.h"
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>  //For day of year
@@ -182,7 +182,7 @@ void RandAddSeedPerfmon()
     {
         RAND_add(pdata, nSize, nSize/100.0);
         memset(pdata, 0, nSize);
-        if (fDebug10) LogPrint("rand", "RandAddSeed() %lu bytes\n", nSize);
+        if (fDebug10) LogPrint("rand", "RandAddSeed() %lu bytes", nSize);
     }
 #endif
 }
@@ -973,13 +973,13 @@ static std::string FormatException(std::exception* pex, const char* pszThread)
 void LogException(std::exception* pex, const char* pszThread)
 {
     std::string message = FormatException(pex, pszThread);
-    LogPrintf("\n%s", message.c_str());
+    LogPrintf("%s", message);
 }
 
 void PrintException(std::exception* pex, const char* pszThread)
 {
     std::string message = FormatException(pex, pszThread);
-    LogPrintf("\n\n************************\n%s\n", message);
+    LogPrintf("\n\n************************\n%s", message);
     fprintf(stderr, "\n\n************************\n%s\n", message.c_str());
     strMiscWarning = message;
     throw;
@@ -988,7 +988,7 @@ void PrintException(std::exception* pex, const char* pszThread)
 void PrintExceptionContinue(std::exception* pex, const char* pszThread)
 {
     std::string message = FormatException(pex, pszThread);
-    LogPrintf("\n\n************************\n%s\n", message);
+    LogPrintf("\n\n************************\n%s", message);
     fprintf(stderr, "\n\n************************\n%s\n", message.c_str());
     strMiscWarning = message;
 }
@@ -1103,13 +1103,12 @@ boost::filesystem::path GetProgramDir()
 
     if (mapArgs.count("-programdir"))
     {
-        // LogPrintf("Acquiring program directory from conf file\n");
         path = boost::filesystem::system_complete(mapArgs["-programdir"]);
 
         if (!boost::filesystem::is_directory(path))
         {
             path = "";
-            LogPrintf("Invalid path stated in gridcoinresearch.conf\n");
+            LogPrintf("Invalid path stated in gridcoinresearch.conf");
         }
         else
         {
@@ -1128,14 +1127,13 @@ boost::filesystem::path GetProgramDir()
 
     for (int i = 0; i < 3; ++i)
     {
-        // LogPrintf("Checking for %s \n", (boost::filesystem::current_path() / list[i]).c_str());
         if (boost::filesystem::exists((boost::filesystem::current_path() / list[i]).c_str()))
         {
             return boost::filesystem::current_path();
         }
     }
 
-        LogPrintf("Please specify program directory in config file using the 'programdir' argument\n");
+        LogPrintf("Please specify program directory in config file using the 'programdir' argument");
         path = "";
         return path;
 
@@ -1310,7 +1308,7 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
 
     // Add data
     vTimeOffsets.input(nOffsetSample);
-    if (fDebug10) LogPrintf("Added time data, samples %d, offset %+" PRId64 " (%+" PRId64 " minutes)\n", vTimeOffsets.size(), nOffsetSample, nOffsetSample/60);
+    if (fDebug10) LogPrintf("Added time data, samples %d, offset %+" PRId64 " (%+" PRId64 " minutes)", vTimeOffsets.size(), nOffsetSample, nOffsetSample/60);
     if (vTimeOffsets.size() >= 5 && vTimeOffsets.size() % 2 == 1)
     {
         // We believe the median of the other nodes 95% and our own node's time ("0" initial offset) 5%. This will also act to gently converge the network to consensus UTC, in case
@@ -1336,7 +1334,7 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
                     fDone = true;
                     string strMessage = _("Warning: Please check that your computer's date and time are correct! If your clock is wrong Gridcoin will not work properly.");
                     strMiscWarning = strMessage;
-                    LogPrintf("*** %s\n", strMessage);
+                    LogPrintf("*** %s", strMessage);
                     uiInterface.ThreadSafeMessageBox(strMessage+" ", string("Gridcoin"), CClientUIInterface::OK | CClientUIInterface::ICON_EXCLAMATION);
                 }
             }
@@ -1346,7 +1344,7 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
                 LogPrintf("%+" PRId64 "  ", n);
             LogPrintf("|  ");
         }
-        if (fDebug10) LogPrintf("nTimeOffset = %+" PRId64 "  (%+" PRId64 " minutes)\n", nTimeOffset, nTimeOffset/60);
+        if (fDebug10) LogPrintf("nTimeOffset = %+" PRId64 "  (%+" PRId64 " minutes)", nTimeOffset, nTimeOffset/60);
     }
 }
 
@@ -1479,7 +1477,7 @@ boost::filesystem::path GetSpecialFolderPath(int nFolder, bool fCreate)
         return fs::path(pszPath);
     }
 
-    LogPrintf("SHGetSpecialFolderPathA() failed, could not obtain requested path.\n");
+    LogPrintf("SHGetSpecialFolderPathA() failed, could not obtain requested path.");
     return fs::path("");
 }
 #endif
@@ -1488,7 +1486,7 @@ void runCommand(std::string strCommand)
 {
     int nErr = ::system(strCommand.c_str());
     if (nErr)
-        LogPrintf("runCommand error: system(%s) returned %d\n", strCommand, nErr);
+        LogPrintf("runCommand error: system(%s) returned %d", strCommand, nErr);
 }
 
 void RenameThread(const char* name)
@@ -1518,7 +1516,7 @@ bool NewThread(void(*pfn)(void*), void* parg)
     {
         boost::thread(pfn, parg); // thread detaches when out of scope
     } catch(boost::thread_resource_error &e) {
-        LogPrintf("Error creating thread: %s\n", e.what());
+        LogPrintf("Error creating thread: %s", e.what());
         return false;
     }
     return true;
@@ -1548,7 +1546,7 @@ std::string MakeSafeMessage(const std::string& messagestring)
     }
     catch (...)
     {
-        LogPrintf("Exception occurred in MakeSafeMessage. Returning an empty message.\n");
+        LogPrintf("Exception occurred in MakeSafeMessage. Returning an empty message.");
         safemessage = "";
     }
     return safemessage;
@@ -1562,7 +1560,7 @@ bool ThreadHandler::createThread(void(*pfn)(ThreadHandlerPtr), ThreadHandlerPtr 
         threadGroup.add_thread(newThread);
         threadMap[tname] = newThread;
     } catch(boost::thread_resource_error &e) {
-        LogPrintf("Error creating thread: %s\n", e.what());
+        LogPrintf("Error creating thread: %s", e.what());
         return false;
     }
     return true;
@@ -1576,7 +1574,7 @@ bool ThreadHandler::createThread(void(*pfn)(void*), void* parg, const std::strin
         threadGroup.add_thread(newThread);
         threadMap[tname] = newThread;
     } catch(boost::thread_resource_error &e) {
-        LogPrintf("Error creating thread: %s\n", e.what());
+        LogPrintf("Error creating thread: %s", e.what());
         return false;
     }
     return true;

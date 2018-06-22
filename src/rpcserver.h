@@ -13,12 +13,12 @@ class CBlockIndex;
 
 #include <univalue.h>
 
+#include "checkpoints.h"
 #include "gridcoin/global_objects_noui.hpp"
 #include "util.h"
-#include "checkpoints.h"
 
+void StartRPCThreads();
 void StopRPCThreads();
-void ThreadRPCServer(void* parg);
 int CommandLineRPC(int argc, char *argv[]);
 
 /*
