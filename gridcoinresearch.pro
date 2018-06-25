@@ -4,31 +4,18 @@ VERSION = 3.1.0.1
 INCLUDEPATH += src src/json src/qt
 DEFINES += QT_GUI BOOST_THREAD_USE_LIB BOOST_SPIRIT_THREADSAFE
 CONFIG += no_include_pwd thread c++11 exceptions concurrent
-QT += core gui network
+QT += core gui network widgets concurrent
 
 win32 {
     DEFINES += _WIN32_WINNT=0x0501 WINVER=0x0501 __USE_MINGW_ANSI_STDIO
-    lessThan(QT_VERSION, 5.0.0) {
-        CONFIG += qaxcontainer
-    }
-    else {
-        QT += axcontainer
-    }
+    QT += axcontainer
 
     # Fix for boost.asio build error. See
     # https://stackoverflow.com/questions/20957727/boostasio-unregisterwaitex-has-not-been-declared
     DEFINES += _WIN32_WINNT=0x0501 WINVER=0x0501
 }
 
-greaterThan(QT_MAJOR_VERSION, 4) {
-    QT += widgets concurrent
-    DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0
-} else {
-    # qmake from Qt4 has no C++11 config so it has to be specified manually.
-    QMAKE_CXXFLAGS += -std=gnu++0x
-}
-
-lessThan(QT_VERSION, 5.8.0) {
+lessThan(QT_MAJOR_VERSION, 5) | lessThan(QT_MINOR_VERSION, 8) {
     # Qt charts not available
 }else{
     QT += charts
@@ -134,8 +121,8 @@ contains(NO_UPGRADE, 1) {
 
 INCLUDEPATH += src/leveldb/include src/leveldb/helpers
 LIBS += $$PWD/src/leveldb/libleveldb.a $$PWD/src/leveldb/libmemenv.a
-SOURCES += src/txdb-leveldb.cpp \ 
-    src/qt/diagnosticsdialog.cpp
+SOURCES += src/txdb-leveldb.cpp
+
 !win32 {
     # we use QMAKE_CXXFLAGS_RELEASE even without RELEASE=1 because we use RELEASE to indicate linking preferences not -O preferences
     genleveldb.commands = cd $$PWD/src/leveldb && CC=\"$$QMAKE_CC\" CXX=\"$$QMAKE_CXX\" $(MAKE) OPT=\"$$QMAKE_CXXFLAGS $$QMAKE_CXXFLAGS_RELEASE\" libleveldb.a libmemenv.a
@@ -194,7 +181,6 @@ HEADERS += src/qt/bitcoingui.h \
     src/qt/addressbookpage.h \
     src/qt/signverifymessagedialog.h \
     src/qt/aboutdialog.h \
-    src/qt/upgradedialog.h \
     src/qt/editaddressdialog.h \
     src/qt/bitcoinaddressvalidator.h \
     src/alert.h \
@@ -269,11 +255,14 @@ HEADERS += src/qt/bitcoingui.h \
     src/clientversion.h \
     src/threadsafety.h \
     src/cpid.h \
-    src/upgrader.h \
     src/boinc.h \
     src/qt/diagnosticsdialog.h \
     src/backup.h \
-    src/appcache.h
+    src/appcache.h \
+    src/tally.h \
+    src/grcrestarter.h \
+    src/neuralnet.h \
+    src/qt/clicklabel.h
 
 
 SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
@@ -286,10 +275,10 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/qt/addressbookpage.cpp \
     src/qt/signverifymessagedialog.cpp \
     src/qt/aboutdialog.cpp \
-    src/qt/upgradedialog.cpp \
     src/qt/editaddressdialog.cpp \
     src/qt/bitcoinaddressvalidator.cpp \
     src/qt/votingdialog.cpp \
+    src/qt/diagnosticsdialog.cpp \
     src/alert.cpp \
     src/block.cpp \
     src/beacon.cpp \
@@ -349,11 +338,14 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/scrypt.cpp \
     src/pbkdf2.cpp \
     src/cpid.cpp \
-    src/upgrader.cpp \
     src/boinc.cpp \
     src/allocators.cpp \
     src/backup.cpp \
-    src/appcache.cpp
+    src/appcache.cpp \
+    src/tally.cpp \
+    src/grcrestarter.cpp \
+    src/neuralnet.cpp \
+    src/qt/clicklabel.cpp
 
 ##
 #RC_FILE  = qaxserver.rc
@@ -368,7 +360,6 @@ FORMS += \
     src/qt/forms/addressbookpage.ui \
     src/qt/forms/signverifymessagedialog.ui \
     src/qt/forms/aboutdialog.ui \
-    src/qt/forms/upgradedialog.ui \
     src/qt/forms/editaddressdialog.ui \
     src/qt/forms/transactiondescdialog.ui \
     src/qt/forms/overviewpage.ui \

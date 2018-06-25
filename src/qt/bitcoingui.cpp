@@ -18,15 +18,12 @@
 // include <QtSql> // Future Use
 
 #include <fstream>
-#include "util.h"
 
 #include "bitcoingui.h"
 #include "transactiontablemodel.h"
 #include "addressbookpage.h"
 
 #include "diagnosticsdialog.h"
-#include "upgradedialog.h"
-#include "upgrader.h"
 #include "sendcoinsdialog.h"
 #include "signverifymessagedialog.h"
 #include "optionsdialog.h"
@@ -52,6 +49,7 @@
 #include "miner.h"
 #include "main.h"
 #include "backup.h"
+#include "clicklabel.h"
 
 #ifdef Q_OS_MAC
 #include "macdockiconhandler.h"
@@ -76,11 +74,7 @@
 #include <QDateTime>
 #include <QMovie>
 #include <QFileDialog>
-
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #include <QStandardPaths>
-#endif
-
 #include <QTimer>
 #include <QDragEnterEvent>
 #include <QDesktopServices> // for opening URLs
@@ -91,11 +85,17 @@
 
 #include <boost/lexical_cast.hpp>
 
-#include "bitcoinrpc.h"
+#include "rpcserver.h"
+#include "rpcclient.h"
+#include "rpcprotocol.h"
+#include "contract/polls.h"
+#include "contract/contract.h"
 
 #include <iostream>
 #include <boost/algorithm/string/case_conv.hpp> // for to_lower()
 #include "boinc.h"
+#include "util.h"
+
 
 extern CWallet* pwalletMain;
 int ReindexWallet();
@@ -104,21 +104,15 @@ extern void qtSetSessionInfo(std::string defaultgrcaddress, std::string cpid, do
 extern void qtSyncWithDPORNodes(std::string data);
 extern double qtExecuteGenericFunction(std::string function,std::string data);
 extern std::string getMacAddress();
-extern bool PushGridcoinDiagnostics();
 extern double qtPushGridcoinDiagnosticData(std::string data);
 
 extern std::string FromQString(QString qs);
 extern std::string qtExecuteDotNetStringFunction(std::string function, std::string data);
 
-std::string ExecuteRPCCommand(std::string method, std::string arg1, std::string arg2);
-std::string ExecuteRPCCommand(std::string method, std::string arg1, std::string arg2, std::string arg3, std::string arg4, std::string arg5);
-std::string ExecuteRPCCommand(std::string method, std::string arg1, std::string arg2, std::string arg3, std::string arg4, std::string arg5, std::string arg6);
-
 std::string ExtractXML(std::string XMLdata, std::string key, std::string key_end);
 
 extern std::string qtGetNeuralHash(std::string data);
 extern std::string qtGetNeuralContract(std::string data);
-json_spirit::Array GetJSONPollsReport(bool bDetail, std::string QueryByTitle, std::string& out_export, bool bIncludeExpired);
 
 extern int64_t IsNeural();
 
@@ -128,9 +122,6 @@ int nRegVersion;
 extern int CreateRestorePoint();
 extern int DownloadBlocks();
 void GetGlobalStatus();
-
-extern int UpgradeClient();
-extern void CheckForUpgrade();
 
 bool IsConfigFileEmpty();
 void HarvestCPIDs(bool cleardata);
@@ -162,17 +153,16 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
     trayIcon(0),
     notificator(0),
     rpcConsole(0),
-    upgrader(0),
     nWeight(0)
 {
 
-    setGeometry(QStyle::alignedRect(Qt::LeftToRight,Qt::AlignCenter,QSize(980,550),qApp->desktop()->availableGeometry()));
+    setGeometry(QStyle::alignedRect(Qt::LeftToRight,Qt::AlignCenter,QDesktopWidget().availableGeometry(this).size() * 0.6,QDesktopWidget().availableGeometry(this)));
 
     setWindowTitle(tr("Gridcoin") + " " + tr("Wallet"));
 
 #ifndef Q_OS_MAC
-    qApp->setWindowIcon(QIcon(":icons/bitcoin"));
-    setWindowIcon(QIcon(":icons/bitcoin"));
+    qApp->setWindowIcon(QPixmap(":/images/gridcoin"));
+    setWindowIcon(QPixmap(":/images/gridcoin"));
 #else
     setUnifiedTitleAndToolBarOnMac(true);
     QApplication::setAttribute(Qt::AA_DontShowIconsInMenus);
@@ -229,17 +219,14 @@ BitcoinGUI::BitcoinGUI(QWidget *parent):
     connect(overviewPage, SIGNAL(transactionClicked(QModelIndex)), this, SLOT(gotoHistoryPage()));
     connect(overviewPage, SIGNAL(transactionClicked(QModelIndex)), transactionView, SLOT(focusTransaction(QModelIndex)));
 
+    // Clicking on the current poll label on the overview page simply sends you to the voting page
+    connect(overviewPage, SIGNAL(pollLabelClicked()), this, SLOT(gotoVotingPage()));
+
     // Double-clicking on a transaction on the transaction history page shows details
     connect(transactionView, SIGNAL(doubleClicked(QModelIndex)), transactionView, SLOT(showDetails()));
 
     rpcConsole = new RPCConsole(this);
     connect(openRPCConsoleAction, SIGNAL(triggered()), rpcConsole, SLOT(show()));
-
-     upgrader = new UpgradeDialog(this);
-     connect(upgradeAction, SIGNAL(triggered()), upgrader, SLOT(show()));
-     connect(upgradeAction, SIGNAL(triggered()), upgrader, SLOT(upgrade()));
-     connect(downloadAction, SIGNAL(triggered()), upgrader, SLOT(show()));
-     connect(downloadAction, SIGNAL(triggered()), upgrader, SLOT(blocks()));
 
      diagnosticsDialog = new DiagnosticsDialog(this);
 
@@ -296,7 +283,7 @@ int CreateRestorePoint()
 
 int DownloadBlocks()
 {
-    printf("Download blocks.");
+    LogPrintf("Download blocks.");
 
     // Instantiate globalcom if not created.
     if (!bGlobalcomInitialized)
@@ -392,13 +379,10 @@ void qtSyncWithDPORNodes(std::string data)
 
     #if defined(WIN32) && defined(QT_GUI)
         if (!bGlobalcomInitialized) return;
-        int result = 0;
         QString qsData = ToQstring(data);
-        if (fDebug3) printf("FullSyncWDporNodes");
-        std::string testnet_flag = fTestNet ? "TESTNET" : "MAINNET";
-        double function_call = qtExecuteGenericFunction("SetTestNetFlag",testnet_flag);
-        result = globalcom->dynamicCall("SyncCPIDsWithDPORNodes(Qstring)",qsData).toInt();
-        printf("Done syncing. %f %f\r\n",function_call,(double)result);
+        if (fDebug3) LogPrintf("FullSyncWDporNodes");
+        int result = globalcom->dynamicCall("SyncCPIDsWithDPORNodes(Qstring)",qsData).toInt();
+        LogPrintf("Done syncing. %d", result);
     #endif
 }
 
@@ -419,7 +403,7 @@ std::string qtGetNeuralContract(std::string data)
     {
         if (!bGlobalcomInitialized) return "NA";
         QString qsData = ToQstring(data);
-        //if (fDebug3) printf("GNC# ");
+        //if (fDebug3) LogPrintf("GNC# ");
         QString sResult = globalcom->dynamicCall("GetNeuralContract()").toString();
         std::string result = FromQString(sResult);
         return result;
@@ -463,28 +447,27 @@ void qtSetSessionInfo(std::string defaultgrcaddress, std::string cpid, double ma
     if (!bGlobalcomInitialized) return;
 
     #if defined(WIN32) && defined(QT_GUI)
-        int result = 0;
         std::string session = defaultgrcaddress + "<COL>" + cpid + "<COL>" + RoundToString(magnitude,1);
         QString qsSession = ToQstring(session);
-        result = globalcom->dynamicCall("SetSessionInfo(Qstring)",qsSession).toInt();
-        printf("rs%f",(double)result);
+        int result = globalcom->dynamicCall("SetSessionInfo(Qstring)",qsSession).toInt();
+        LogPrintf("Set session info result %d", result);
     #endif
 }
 
-void CheckForUpgrade()
+bool IsUpgradeAvailable()
 {
-            if (!bGlobalcomInitialized) return;
+   if (!bGlobalcomInitialized)
+      return false;
 
-            if (bCheckedForUpgrade == false && !fTestNet && bProjectsInitialized)
-            {
-                int nNeedsUpgrade = 0;
-                bCheckedForUpgrade = true;
-                #ifdef WIN32
-                    nNeedsUpgrade = globalcom->dynamicCall("ClientNeedsUpgrade()").toInt();
-                #endif
-                printf("Needs upgraded %f\r\n",(double)nNeedsUpgrade);
-                if (nNeedsUpgrade) UpgradeClient();
-            }
+   bool upgradeAvailable = false;
+   if (!fTestNet)
+   {
+#ifdef WIN32
+      upgradeAvailable = globalcom->dynamicCall("ClientNeedsUpgrade()").toInt();
+#endif
+   }
+
+   return upgradeAvailable;
 }
 
 
@@ -502,7 +485,7 @@ int64_t IsNeural()
     }
     catch(...)
     {
-        printf("Exception\r\n");
+        LogPrintf("Exception");
         return 0;
     }
 }
@@ -514,7 +497,7 @@ int UpgradeClient()
     if (!bGlobalcomInitialized)
         return 0;
 
-    printf("Executing upgrade");
+    LogPrintf("Executing upgrade");
 
 #ifdef WIN32
     globalcom->dynamicCall(fTestNet
@@ -530,7 +513,7 @@ int UpgradeClient()
 void BitcoinGUI::setOptionsStyleSheet(QString qssFileName)
 {
     // setting the style sheets for the app
-    QFile qss(":stylesheets/"+qssFileName);
+    QFile qss(":/stylesheets/"+qssFileName);
     if (qss.open(QIODevice::ReadOnly)){
         QTextStream qssStream(&qss);
         QString sMainWindowHTML = qssStream.readAll();
@@ -538,7 +521,11 @@ void BitcoinGUI::setOptionsStyleSheet(QString qssFileName)
 
         qApp->setStyleSheet(sMainWindowHTML);
     }
-
+    sSheet=qssFileName;
+    setIcons();
+    // reset encryption status to apply icon color changes
+    if(walletModel)
+        setEncryptionStatus(walletModel->getEncryptionStatus());
 }
 
 
@@ -546,53 +533,53 @@ void BitcoinGUI::createActions()
 {
     QActionGroup *tabGroup = new QActionGroup(this);
 
-    overviewAction = new QAction(QIcon(":/icons/overview"), tr("&Overview"), tabGroup);
+    overviewAction = new QAction(tr("&Overview"), tabGroup);
     overviewAction->setToolTip(tr("Show general overview of wallet"));
     overviewAction->setCheckable(true);
     overviewAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_1));
 
-    sendCoinsAction = new QAction(QIcon(":/icons/send"), tr("&Send"), tabGroup);
+    sendCoinsAction = new QAction(tr("&Send"), tabGroup);
     sendCoinsAction->setToolTip(tr("Send coins to a Gridcoin address"));
     sendCoinsAction->setCheckable(true);
     sendCoinsAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_2));
 
-    receiveCoinsAction = new QAction(QIcon(":/icons/receiving_addresses"), tr("&Receive"), tabGroup);
+    receiveCoinsAction = new QAction(tr("&Receive"), tabGroup);
     receiveCoinsAction->setToolTip(tr("Show the list of addresses for receiving payments"));
     receiveCoinsAction->setCheckable(true);
     receiveCoinsAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_3));
 
-    historyAction = new QAction(QIcon(":/icons/history"), tr("&Transactions"), tabGroup);
+    historyAction = new QAction(tr("&Transactions"), tabGroup);
     historyAction->setToolTip(tr("Browse transaction history"));
     historyAction->setCheckable(true);
     historyAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_4));
 
-    addressBookAction = new QAction(QIcon(":/icons/address-book"), tr("&Address Book"), tabGroup);
+    addressBookAction = new QAction(tr("&Address Book"), tabGroup);
     addressBookAction->setToolTip(tr("Edit the list of stored addresses and labels"));
     addressBookAction->setCheckable(true);
     addressBookAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_5));
 
-    votingAction = new QAction(QIcon(":/icons/voting"), tr("&Voting"), tabGroup);
+    votingAction = new QAction(tr("&Voting"), tabGroup);
     votingAction->setToolTip(tr("Voting"));
     votingAction->setCheckable(true);
     votingAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_6));
 
-    bxAction = new QAction(QIcon(":/icons/block"), tr("&Block Explorer"), this);
+    bxAction = new QAction(tr("&Block Explorer"), this);
     bxAction->setStatusTip(tr("Block Explorer"));
     bxAction->setMenuRole(QAction::TextHeuristicRole);
 
-    exchangeAction = new QAction(QIcon(":/icons/ex"), tr("&Exchange"), this);
+    exchangeAction = new QAction(tr("&Exchange"), this);
     exchangeAction->setStatusTip(tr("Web Site"));
     exchangeAction->setMenuRole(QAction::TextHeuristicRole);
 
-    websiteAction = new QAction(QIcon(":/icons/www"), tr("&Web Site"), this);
+    websiteAction = new QAction(tr("&Web Site"), this);
     websiteAction->setStatusTip(tr("Web Site"));
     websiteAction->setMenuRole(QAction::TextHeuristicRole);
 
-    chatAction = new QAction(QIcon(":/icons/chat"), tr("&GRC Chat Room"), this);
+    chatAction = new QAction(tr("&GRC Chat Room"), this);
     chatAction->setStatusTip(tr("GRC Chatroom"));
     chatAction->setMenuRole(QAction::TextHeuristicRole);
 
-    boincAction = new QAction(QIcon(":/images/boinc"), tr("&BOINC"), this);
+    boincAction = new QAction(tr("&BOINC"), this);
     boincAction->setStatusTip(tr("Gridcoin rewards distributed computing with BOINC"));
     boincAction->setMenuRole(QAction::TextHeuristicRole);
 
@@ -606,87 +593,78 @@ void BitcoinGUI::createActions()
     connect(historyAction, SIGNAL(triggered()), this, SLOT(gotoHistoryPage()));
     connect(addressBookAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(addressBookAction, SIGNAL(triggered()), this, SLOT(gotoAddressBookPage()));
-    connect(votingAction, SIGNAL(triggered()), this, SLOT(votingClicked()));
+    connect(votingAction, SIGNAL(triggered()), this, SLOT(gotoVotingPage()));
 
     connect(websiteAction, SIGNAL(triggered()), this, SLOT(websiteClicked()));
     connect(bxAction, SIGNAL(triggered()), this, SLOT(bxClicked()));
     connect(exchangeAction, SIGNAL(triggered()), this, SLOT(exchangeClicked()));
-    connect(boincAction, SIGNAL(triggered()), this, SLOT(boincClicked()));
+    connect(boincAction, SIGNAL(triggered()), this, SLOT(boincStatsClicked()));
     connect(chatAction, SIGNAL(triggered()), this, SLOT(chatClicked()));
 
-    quitAction = new QAction(QIcon(":/icons/quit"), tr("E&xit"), this);
+    quitAction = new QAction(tr("E&xit"), this);
     quitAction->setToolTip(tr("Quit application"));
     quitAction->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_Q));
     quitAction->setMenuRole(QAction::QuitRole);
 
 
 
-    rebuildAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Rebuild Block Chain"), this);
+    rebuildAction = new QAction(tr("&Rebuild Block Chain"), this);
     rebuildAction->setStatusTip(tr("Rebuild Block Chain"));
     rebuildAction->setMenuRole(QAction::TextHeuristicRole);
 
-    downloadAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Download Blocks"), this);
+    downloadAction = new QAction(tr("&Download Blocks"), this);
     downloadAction->setStatusTip(tr("Download Blocks"));
     downloadAction->setMenuRole(QAction::TextHeuristicRole);
 
-    upgradeAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Upgrade Client"), this);
+    upgradeAction = new QAction(tr("&Upgrade Client"), this);
     upgradeAction->setStatusTip(tr("Upgrade Client"));
     upgradeAction->setMenuRole(QAction::TextHeuristicRole);
 
-    rebootAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Reboot Client"), this);
-    rebootAction->setStatusTip(tr("Reboote Client"));
-    rebootAction->setMenuRole(QAction::TextHeuristicRole);
-
-    aboutAction = new QAction(QIcon(":/icons/bitcoin"), tr("&About Gridcoin"), this);
+    aboutAction = new QAction(tr("&About Gridcoin"), this);
     aboutAction->setToolTip(tr("Show information about Gridcoin"));
     aboutAction->setMenuRole(QAction::AboutRole);
 
-    miningAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Neural Network"), this);
+    miningAction = new QAction(tr("&Neural Network"), this);
     miningAction->setStatusTip(tr("Neural Network"));
     miningAction->setMenuRole(QAction::TextHeuristicRole);
 
-    configAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Advanced Configuration"), this);
+    configAction = new QAction(tr("&Advanced Configuration"), this);
     configAction->setStatusTip(tr("Advanced Configuration"));
     configAction->setMenuRole(QAction::TextHeuristicRole);
 
-    newUserWizardAction = new QAction(QIcon(":/icons/bitcoin"), tr("&New User Wizard"), this);
+    newUserWizardAction = new QAction(tr("&New User Wizard"), this);
     newUserWizardAction->setStatusTip(tr("New User Wizard"));
     newUserWizardAction->setMenuRole(QAction::TextHeuristicRole);
 
-    foundationAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Foundation"), this);
+    foundationAction = new QAction(tr("&Foundation"), this);
     foundationAction->setStatusTip(tr("Foundation"));
     foundationAction->setMenuRole(QAction::TextHeuristicRole);
 
-    diagnosticsAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Diagnostics"), this);
+    diagnosticsAction = new QAction(tr("&Diagnostics"), this);
     diagnosticsAction->setStatusTip(tr("Diagnostics"));
     diagnosticsAction->setMenuRole(QAction::TextHeuristicRole);
 
-
-    faqAction = new QAction(QIcon(":/icons/bitcoin"), tr("FA&Q"), this);
-    faqAction->setStatusTip(tr("Interactive FAQ"));
-    faqAction->setMenuRole(QAction::TextHeuristicRole);
-
-    optionsAction = new QAction(QIcon(":/icons/options"), tr("&Options..."), this);
+    optionsAction = new QAction(tr("&Options..."), this);
     optionsAction->setToolTip(tr("Modify configuration options for Gridcoin"));
     optionsAction->setMenuRole(QAction::PreferencesRole);
-    toggleHideAction = new QAction(QIcon(":/icons/bitcoin"), tr("&Show / Hide"), this);
-    encryptWalletAction = new QAction(QIcon(":/icons/lock_closed"), tr("&Encrypt Wallet..."), this);
+    toggleHideAction = new QAction(tr("&Show / Hide"), this);
+    encryptWalletAction = new QAction(tr("&Encrypt Wallet..."), this);
     encryptWalletAction->setToolTip(tr("Encrypt or decrypt wallet"));
     encryptWalletAction->setCheckable(true);
-    backupWalletAction = new QAction(QIcon(":/icons/filesave"), tr("&Backup Wallet/Config..."), this);
+    backupWalletAction = new QAction(tr("&Backup Wallet/Config..."), this);
     backupWalletAction->setToolTip(tr("Backup wallet/config to another location"));
-    changePassphraseAction = new QAction(QIcon(":/icons/key"), tr("&Change Passphrase..."), this);
+    changePassphraseAction = new QAction(tr("&Change Passphrase..."), this);
     changePassphraseAction->setToolTip(tr("Change the passphrase used for wallet encryption"));
-    unlockWalletAction = new QAction(QIcon(":/icons/lock_open"), tr("&Unlock Wallet..."), this);
+    unlockWalletAction = new QAction(tr("&Unlock Wallet..."), this);
     unlockWalletAction->setToolTip(tr("Unlock wallet"));
-    lockWalletAction = new QAction(QIcon(":/icons/lock_closed"), tr("&Lock Wallet"), this);
+    lockWalletAction = new QAction(tr("&Lock Wallet"), this);
     lockWalletAction->setToolTip(tr("Lock wallet"));
-    signMessageAction = new QAction(QIcon(":/icons/edit"), tr("Sign &message..."), this);
-    verifyMessageAction = new QAction(QIcon(":/icons/transaction_0"), tr("&Verify message..."), this);
+    signMessageAction = new QAction(tr("Sign &message..."), this);
+    verifyMessageAction = new QAction(tr("&Verify message..."), this);
 
-    exportAction = new QAction(QIcon(":/icons/export"), tr("&Export..."), this);
+    exportAction = new QAction(tr("&Export..."), this);
     exportAction->setToolTip(tr("Export the data in the current tab to a file"));
-    openRPCConsoleAction = new QAction(QIcon(":/icons/debugwindow"), tr("&Debug window"), this);
+    openRPCConsoleAction = new QAction(tr("&Debug window"), this);
     openRPCConsoleAction->setToolTip(tr("Open debugging and diagnostic console"));
 
     connect(quitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
@@ -704,15 +682,48 @@ void BitcoinGUI::createActions()
     connect(upgradeAction, SIGNAL(triggered()), this, SLOT(upgradeClicked()));
     connect(downloadAction, SIGNAL(triggered()), this, SLOT(downloadClicked()));
     connect(configAction, SIGNAL(triggered()), this, SLOT(configClicked()));
-
     connect(miningAction, SIGNAL(triggered()), this, SLOT(miningClicked()));
-
     connect(diagnosticsAction, SIGNAL(triggered()), this, SLOT(diagnosticsClicked()));
-
     connect(foundationAction, SIGNAL(triggered()), this, SLOT(foundationClicked()));
-    connect(faqAction, SIGNAL(triggered()), this, SLOT(faqClicked()));
-
     connect(newUserWizardAction, SIGNAL(triggered()), this, SLOT(newUserWizardClicked()));
+}
+
+void BitcoinGUI::setIcons()
+{
+    overviewAction->setIcon(QPixmap(":/icons/overview_"+sSheet));
+    sendCoinsAction->setIcon(QPixmap(":/icons/send_"+sSheet));
+    receiveCoinsAction->setIcon(QPixmap(":/icons/receiving_addresses_"+sSheet));
+    historyAction->setIcon(QPixmap(":/icons/history_"+sSheet));
+    addressBookAction->setIcon(QPixmap(":/icons/address-book_"+sSheet));
+    votingAction->setIcon(QPixmap(":/icons/voting_"+sSheet));
+    unlockWalletAction->setIcon(QPixmap(":/icons/lock_open_"+sSheet));
+    lockWalletAction->setIcon(QPixmap(":/icons/lock_closed_"+sSheet));
+
+    encryptWalletAction->setIcon(QPixmap(":/icons/lock_closed_"+sSheet));
+
+    bxAction->setIcon(QPixmap(":/icons/block"));
+    exchangeAction->setIcon(QPixmap(":/icons/ex"));
+    websiteAction->setIcon(QPixmap(":/icons/www"));
+    chatAction->setIcon(QPixmap(":/icons/chat"));
+    boincAction->setIcon(QPixmap(":/images/boinc"));
+    quitAction->setIcon(QPixmap(":/icons/quit"));
+    rebuildAction->setIcon(QPixmap(":/images/gridcoin"));
+    downloadAction->setIcon(QPixmap(":/images/gridcoin"));
+    upgradeAction->setIcon(QPixmap(":/images/gridcoin"));
+    aboutAction->setIcon(QPixmap(":/images/gridcoin"));
+    miningAction->setIcon(QPixmap(":/images/gridcoin"));
+    configAction->setIcon(QPixmap(":/images/gridcoin"));
+    newUserWizardAction->setIcon(QPixmap(":/images/gridcoin"));
+    foundationAction->setIcon(QPixmap(":/images/gridcoin"));
+    diagnosticsAction->setIcon(QPixmap(":/images/gridcoin"));
+    optionsAction->setIcon(QPixmap(":/icons/options"));
+    toggleHideAction->setIcon(QPixmap(":/images/gridcoin"));
+    backupWalletAction->setIcon(QPixmap(":/icons/filesave"));
+    changePassphraseAction->setIcon(QPixmap(":/icons/key"));
+    signMessageAction->setIcon(QPixmap(":/icons/edit"));
+    verifyMessageAction->setIcon(QPixmap(":/icons/transaction_0"));
+    exportAction->setIcon(QPixmap(":/icons/export"));
+    openRPCConsoleAction->setIcon(QPixmap(":/icons/debugwindow"));
 }
 
 void BitcoinGUI::createMenuBar()
@@ -752,21 +763,18 @@ void BitcoinGUI::createMenuBar()
     community->addAction(websiteAction);
 
     QMenu *qmAdvanced = appMenuBar->addMenu(tr("&Advanced"));
+
 #ifdef WIN32  // Some actions in this menu are implemented in Visual Basic and thus only work on Windows
     qmAdvanced->addAction(configAction);
     qmAdvanced->addAction(miningAction);
 //	qmAdvanced->addAction(newUserWizardAction);
     qmAdvanced->addSeparator();
-    qmAdvanced->addAction(faqAction);
     qmAdvanced->addAction(foundationAction);
 //	qmAdvanced->addAction(diagnosticsAction);
-
+     qmAdvanced->addAction(downloadAction);
 #endif /* defined(WIN32) */
     qmAdvanced->addSeparator();
     qmAdvanced->addAction(rebuildAction);
-#ifdef WIN32
-    qmAdvanced->addAction(downloadAction);
-#endif
 
     QMenu *help = appMenuBar->addMenu(tr("&Help"));
     help->addAction(openRPCConsoleAction);
@@ -774,10 +782,11 @@ void BitcoinGUI::createMenuBar()
     help->addAction(diagnosticsAction);
     help->addSeparator();
     help->addAction(aboutAction);
-#ifdef WIN32
-    help->addSeparator();
-    help->addAction(upgradeAction);
-#endif
+// The below is commented out until the upgrader is repaired.
+//#ifdef WIN32
+//    help->addSeparator();
+//    help->addAction(upgradeAction);
+//#endif
 
 }
 
@@ -859,18 +868,17 @@ void BitcoinGUI::createToolBars()
     toolbar3->setOrientation(Qt::Horizontal);
     toolbar3->setMovable( false );
     toolbar3->setObjectName("toolbar3");
-    QLabel *grcLogoLabel = new QLabel();
-    grcLogoLabel->setPixmap(QPixmap(":/images/logo_hz"));
+    ClickLabel *grcLogoLabel = new ClickLabel();
+    grcLogoLabel->setObjectName("gridcoinLogoHorizontal");
+    connect(grcLogoLabel, SIGNAL(clicked()), this, SLOT(websiteClicked()));
     toolbar3->addWidget(grcLogoLabel);
     QWidget* logoSpacer = new QWidget();
     logoSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     toolbar3->addWidget(logoSpacer);
     logoSpacer->setObjectName("logoSpacer");
-    QLabel *boincLogoLabel = new QLabel();
-    boincLogoLabel->setText("<html><head/><body><p align=\"center\"><a href=\"https://boinc.berkeley.edu\"><span style=\" text-decoration: underline; color:#0000ff;\"><img src=\":/images/boinc\"/></span></a></p></body></html>");
-    boincLogoLabel->setTextFormat(Qt::RichText);
-    boincLogoLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
-    boincLogoLabel->setOpenExternalLinks(true);
+    ClickLabel *boincLogoLabel = new ClickLabel();
+    boincLogoLabel->setObjectName("boincLogo");
+    connect(boincLogoLabel, SIGNAL(clicked()), this, SLOT(boincClicked()));
     toolbar3->addWidget(boincLogoLabel);
 
 
@@ -886,19 +894,19 @@ void BitcoinGUI::setClientModel(ClientModel *clientModel)
         {
             setWindowTitle(windowTitle() + QString(" ") + tr("[testnet]"));
 #ifndef Q_OS_MAC
-            qApp->setWindowIcon(QIcon(":icons/bitcoin_testnet"));
-            setWindowIcon(QIcon(":icons/bitcoin_testnet"));
+            qApp->setWindowIcon(QPixmap(":/images/gridcoin"));
+            setWindowIcon(QPixmap(":/images/gridcoin"));
 #else
-            MacDockIconHandler::instance()->setIcon(QIcon(":icons/bitcoin_testnet"));
+            MacDockIconHandler::instance()->setIcon(QPixmap(":/images/gridcoin"));
 #endif
             if(trayIcon)
             {
                 trayIcon->setToolTip(tr("Gridcoin client") + QString(" ") + tr("[testnet]"));
-                trayIcon->setIcon(QIcon(":/icons/toolbar_testnet"));
-                toggleHideAction->setIcon(QIcon(":/icons/toolbar_testnet"));
+                trayIcon->setIcon(QPixmap(":/images/gridcoin"));
+                toggleHideAction->setIcon(QPixmap(":/images/gridcoin"));
             }
 
-            aboutAction->setIcon(QIcon(":/icons/toolbar_testnet"));
+            aboutAction->setIcon(QPixmap(":/images/gridcoin"));
         }
 
         // Keep up to date with client
@@ -959,7 +967,7 @@ void BitcoinGUI::createTrayIcon()
 #ifndef Q_OS_MAC
     trayIcon = new QSystemTrayIcon(this);
     trayIcon->setToolTip(tr("Gridcoin client"));
-    trayIcon->setIcon(QIcon(":/icons/toolbar"));
+    trayIcon->setIcon(QPixmap(":/images/gridcoin"));
     trayIcon->show();
 #endif
 
@@ -1028,18 +1036,6 @@ void BitcoinGUI::aboutClicked()
     dlg.setModel(clientModel);
     dlg.exec();
 }
-
-
-void BitcoinGUI::votingClicked()
-{
-    votingAction->setChecked(true);
-    votingPage->resetData();
-    centralWidget->setCurrentWidget(votingPage);
-
-    exportAction->setEnabled(false);
-    disconnect(exportAction, SIGNAL(triggered()), 0, 0);
-}
-
 
 void BitcoinGUI::setNumConnections(int count)
 {
@@ -1245,7 +1241,7 @@ void BitcoinGUI::NewUserWizard()
         std::string sBoincNarr = "";
         if (sout == "-1")
         {
-            printf("Boinc not installed in default location! \r\n");
+            LogPrintf("Boinc not installed in default location! ");
             //BoincInstalled=false;
             std::string nicePath = GetBoincDataDir();
             sBoincNarr = "Boinc is not installed in default location " + nicePath + "!  Please set boincdatadir=c:\\programdata\\boinc\\    to the correct path where Boincs programdata directory resides.";
@@ -1260,7 +1256,7 @@ void BitcoinGUI::NewUserWizard()
         {
             std::string new_email = tostdstring(boincemail);
             boost::to_lower(new_email);
-            printf("User entered %s \r\n",new_email.c_str());
+            LogPrintf("User entered %s ",new_email);
             //Create Config File
             CreateNewConfigFile(new_email);
             QString strMessage = tr("Created new Configuration File Successfully. ");
@@ -1323,7 +1319,7 @@ void BitcoinGUI::incomingTransaction(const QModelIndex & parent, int start, int 
                               tr("Date: %1\n"
                                  "Amount: %2\n"
                                  "Type: %3\n"
-                                 "Address: %4\n")
+                                 "Address: %4")
                               .arg(date)
                               .arg(BitcoinUnits::formatWithUnit(walletModel->getOptionsModel()->getDisplayUnit(), amount, true))
                               .arg(type)
@@ -1333,13 +1329,13 @@ void BitcoinGUI::incomingTransaction(const QModelIndex & parent, int start, int 
 
 void BitcoinGUI::rebuildClicked()
 {
-    printf("Rebuilding...");
+    LogPrintf("Rebuilding...");
     ReindexWallet();
 }
 
 void BitcoinGUI::upgradeClicked()
 {
-    printf("Upgrading Gridcoin...");
+    LogPrintf("Upgrading Gridcoin...");
     UpgradeClient();
 }
 
@@ -1384,18 +1380,6 @@ void BitcoinGUI::foundationClicked()
 #endif
 }
 
-
-void BitcoinGUI::faqClicked()
-{
-#ifdef WIN32
-    if (!bGlobalcomInitialized) return;
-    std::string testnet_flag = fTestNet ? "TESTNET" : "MAINNET";
-    double function_call = qtExecuteGenericFunction("SetTestNetFlag",testnet_flag);
-    globalcom->dynamicCall("ShowFAQ()");
-#endif
-}
-
-
 void BitcoinGUI::newUserWizardClicked()
 {
 #ifdef WIN32
@@ -1409,8 +1393,6 @@ void BitcoinGUI::miningClicked()
 
 #ifdef WIN32
     if (!bGlobalcomInitialized) return;
-    std::string testnet_flag = fTestNet ? "TESTNET" : "MAINNET";
-    double function_call = qtExecuteGenericFunction("SetTestNetFlag",testnet_flag);
     globalcom->dynamicCall("ShowMiningConsole()");
 #endif
 }
@@ -1429,6 +1411,11 @@ void BitcoinGUI::chatClicked()
 }
 
 void BitcoinGUI::boincClicked()
+{
+    QDesktopServices::openUrl(QUrl("https://boinc.berkeley.edu"));
+}
+
+void BitcoinGUI::boincStatsClicked()
 {
     QDesktopServices::openUrl(QUrl("https://boincstats.com/en/stats/-1/team/detail/118094994/overview"));
 }
@@ -1486,6 +1473,16 @@ void BitcoinGUI::gotoSendCoinsPage()
 {
     sendCoinsAction->setChecked(true);
     centralWidget->setCurrentWidget(sendCoinsPage);
+
+    exportAction->setEnabled(false);
+    disconnect(exportAction, SIGNAL(triggered()), 0, 0);
+}
+
+void BitcoinGUI::gotoVotingPage()
+{
+    votingAction->setChecked(true);
+    votingPage->resetData();
+    centralWidget->setCurrentWidget(votingPage);
 
     exportAction->setEnabled(false);
     disconnect(exportAction, SIGNAL(triggered()), 0, 0);
@@ -1564,8 +1561,8 @@ void BitcoinGUI::setEncryptionStatus(int status)
         break;
     case WalletModel::Unlocked:
         labelEncryptionIcon->show();
-        labelEncryptionIcon->setPixmap(QIcon(":/icons/lock_open").pixmap(STATUSBAR_ICONSIZE,STATUSBAR_ICONSIZE));
-        labelEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b>"));
+        labelEncryptionIcon->setPixmap(QIcon(":/icons/lock_open_"+sSheet).pixmap(STATUSBAR_ICONSIZE,STATUSBAR_ICONSIZE));
+        labelEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently %1 ").arg(fWalletUnlockStakingOnly ? tr("<b>unlocked for staking only</b>") : tr("<b>fully unlocked</b>")));
         encryptWalletAction->setChecked(true);
         changePassphraseAction->setEnabled(true);
         unlockWalletAction->setVisible(false);
@@ -1574,7 +1571,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
         break;
     case WalletModel::Locked:
         labelEncryptionIcon->show();
-        labelEncryptionIcon->setPixmap(QIcon(":/icons/lock_closed").pixmap(STATUSBAR_ICONSIZE,STATUSBAR_ICONSIZE));
+        labelEncryptionIcon->setPixmap(QIcon(":/icons/lock_closed_"+sSheet).pixmap(STATUSBAR_ICONSIZE,STATUSBAR_ICONSIZE));
         labelEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>locked</b>"));
         encryptWalletAction->setChecked(true);
         changePassphraseAction->setEnabled(true);
@@ -1599,11 +1596,7 @@ void BitcoinGUI::encryptWallet(bool status)
 
 void BitcoinGUI::backupWallet()
 {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
     QString saveDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-#else
-    QString saveDir = QDesktopServices::storageLocation(QDesktopServices::DocumentsLocation);
-#endif
     QString walletfilename = QFileDialog::getSaveFileName(this, tr("Backup Wallet"), saveDir, tr("Wallet Data (*.dat)"));
     if(!walletfilename.isEmpty()) {
         if(!BackupWallet(*pwalletMain, FromQString(walletfilename))) {
@@ -1733,18 +1726,22 @@ void ReinstantiateGlobalcom()
     // Note, on Windows, if the performance counters are corrupted, rebuild them
     // by going to an elevated command prompt and issue the command: lodctr /r
     // (to rebuild the performance counters in the registry)
-    printf("Instantiating globalcom for Windows %f",(double)0);
+    LogPrintf("Instantiating globalcom for Windows.");
     try
     {
         globalcom = new QAxObject("BoincStake.Utilization");
-        printf("Instantiated globalcom for Windows");
+        LogPrintf("Instantiated globalcom for Windows.");
     }
     catch(...)
     {
-        printf("Failed to instantiate globalcom.");
+        LogPrintf("Failed to instantiate globalcom.");
+
+        return;
     }
 
     bGlobalcomInitialized = true;
+    std::string sNetworkFlag = fTestNet ? "TESTNET" : "MAINNET";
+    globalcom->dynamicCall("SetTestNetFlag(QString)", ToQstring(sNetworkFlag));
 #endif
 }
 
@@ -1753,7 +1750,7 @@ void BitcoinGUI::timerfire()
     try
     {
         if ( (nRegVersion==0 || Timer("start",10))  &&  !bGlobalcomInitialized)
-        {            
+        {
             ReinstantiateGlobalcom();
             nRegVersion=9999;
 
@@ -1783,35 +1780,11 @@ void BitcoinGUI::timerfire()
                         std::string Argument1 = ExtractXML(sData,"<ARG1>","</ARG1>");
                         std::string Argument2 = ExtractXML(sData,"<ARG2>","</ARG2>");
 
-                        if (RPCCommand=="vote")
+                        if (RPCCommand=="rain")
                         {
-                            std::string testnet_flag = fTestNet ? "TESTNET" : "MAINNET";
-                            double function_call = qtExecuteGenericFunction("SetTestNetFlag",testnet_flag);
-                            std::string response = ExecuteRPCCommand("vote",Argument1,Argument2);
+                            std::string response = executeRain(Argument1+Argument2);
                             double resultcode = qtExecuteGenericFunction("SetRPCResponse"," "+response);
                         }
-                        else if (RPCCommand=="rain")
-                        {
-                            std::string response = ExecuteRPCCommand("rain",Argument1,Argument2);
-                            double resultcode = qtExecuteGenericFunction("SetRPCResponse"," "+response);
-                        }
-                        else if (RPCCommand=="addpoll")
-                        {
-                            std::string testnet_flag = fTestNet ? "TESTNET" : "MAINNET";
-                            double function_call = qtExecuteGenericFunction("SetTestNetFlag",testnet_flag);
-                            std::string Argument3 = ExtractXML(sData,"<ARG3>","</ARG3>");
-                            std::string Argument4 = ExtractXML(sData,"<ARG4>","</ARG4>");
-                            std::string Argument5 = ExtractXML(sData,"<ARG5>","</ARG5>");
-                            std::string Argument6 = ExtractXML(sData,"<ARG6>","</ARG6>");
-                            std::string response = ExecuteRPCCommand("addpoll",Argument1,Argument2,Argument3,Argument4,Argument5,Argument6);
-                            double resultcode = qtExecuteGenericFunction("SetRPCResponse"," "+response);
-                        }
-                        else if (RPCCommand == "addattachment")
-                        {
-                            msAttachmentGuid = Argument1;
-                            printf("\r\n attachment added %s \r\n",msAttachmentGuid.c_str());
-                        }
-
                     }
                 #endif
         }
@@ -1833,7 +1806,7 @@ void BitcoinGUI::timerfire()
     }
     catch(std::runtime_error &e)
     {
-            printf("GENERAL RUNTIME ERROR!");
+            LogPrintf("GENERAL RUNTIME ERROR!");
     }
 
 
@@ -1880,24 +1853,22 @@ void BitcoinGUI::updateStakingIcon()
     uint64_t nWeight, nLastInterval;
     std::string ReasonNotStaking;
     { LOCK(MinerStatus.lock);
-        // not using real weigh to not break calculation
-        nWeight = MinerStatus.ValueSum;
+        // not using real weight to not break calculation - fixed - but retaining GRC units for instead of internal weight units.
+        nWeight = MinerStatus.WeightSum / 80.0;
         nLastInterval = MinerStatus.nLastCoinStakeSearchInterval;
         ReasonNotStaking = MinerStatus.ReasonNotStaking;
     }
 
-    uint64_t nNetworkWeight = GetPoSKernelPS();
+    uint64_t nNetworkWeight = GetEstimatedNetworkWeight() / 80.0;
     bool staking = nLastInterval && nWeight;
-    uint64_t nEstimateTime = staking ? (GetTargetSpacing(nBestHeight) * nNetworkWeight / nWeight) : 0;
+    uint64_t nEstimateTime = GetEstimatedTimetoStake();
 
     if (staking)
     {
-        if (fDebug10) printf("StakeIcon Vitals BH %f, NetWeight %f, Weight %f \r\n", (double)GetTargetSpacing(nBestHeight),(double)nNetworkWeight,(double)nWeight);
         QString text = GetEstimatedTime(nEstimateTime);
         labelStakingIcon->setPixmap(QIcon(":/icons/staking_on").pixmap(STATUSBAR_ICONSIZE,STATUSBAR_ICONSIZE));
         labelStakingIcon->setToolTip(tr("Staking.<br>Your weight is %1<br>Network weight is %2<br><b>Estimated</b> time to earn reward is %3.")
                                      .arg(nWeight).arg(nNetworkWeight).arg(text));
-
     }
     else
     {

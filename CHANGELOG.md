@@ -4,7 +4,125 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## [3.7.0.0]
+## [3.7.13.0] 2018-06-02, leisure
+### Fixed
+ - Fix voting regression when done from the UI, #1133 (@Foggyx420).
+
+## [3.7.12.0] 2018-05-25, leisure
+
+### Fixed
+ - Fixes for displaying on high DPI displays, #517 (@skcin).
+ - Re-enable unit tests, add unit test to Travis, #769, #808 (@thecharlatan).
+ - Fix empty string in sendalert2 (@tomasbrod).
+
+### Added
+ - Neural Report RPC command, #1063 (@tomasbrod).
+ - GUI wallet redign with new icons and purple native style (@skcin).
+ 
+### Changed
+ - Switch to autotools and Depends from Bitcoin, #487 (@thecharlatan).
+ - Clean and update docs for new build system, remove outdated, #828 (@thecharlatan).
+ - Change estimated time to stake calculations to be more accurate, #1084 (@jamescowens).
+ - Move logging to tinyformat, #1009 (@thecharlatan).
+ - Improve appcache performance, #734 (@denravonska).
+ - Improve block index memory access performance, #679 (@denravonska).
+ - NN fixes: clean logging, explain mag single response, move contract to ndata_nresp (@denravonska)
+ - Updated translations:
+    - Turkish, #771 (@confuest).
+    - Chinese, #1012 (@linnaea).
+ - RPC refactor: Cleaner locks, better error handling, move execute calls to straght rpc calls, #1024 (@Foggyx420).
+ - Change locking primitives from Boost to STL, #1029 (@Foggyx420).
+
+### Removed
+ - gridcoindiagnostic RPC call (@denravonska).
+ - Galaza, #945 (@barton2526).
+ - Assertion in SignSignature, #998 (@thecharlatan).
+ - Upgrade menu, #1094 (@jamescowens).
+ - Acid test functions, #871 (@tomasbrod).
+ - Qt4 support, #801 (@denravonska).
+ 
+## [3.7.11.0] 2018-03-15, leisure
+### Fixed
+ - Fix wallet being locked while flushing. It now requires a clean shutdown
+   or a backup to migrate the wallet.dat to a different system, #1010 (@jamescowens).
+
+### Changed
+ - Automatic backups can now be disabled by using `-walletbackupinterval=0`,
+  #1018 (@denravonska).
+ - Trigger a fix spent coins check on start and after block disconnect, #1018 (@denravonska).
+
+## [3.7.10.0] 2018-03-05, leisure
+### Fixed
+ - Fix sync issues due to beacon age checks, #1003 (@denravonska).
+
+## [3.7.9.0] 2018-03-03, leisure
+### Fixed
+ - Fix issues with NN participation on Windows, #986 (@Foggyx420).
+ - Fix stray data in beaconreport RPC, #986 (@Foggyx420).
+ - Fix spelling error, #989 (@caraka).
+
+## [3.7.8.0] 2018-03-01, mandatory
+### Fixed
+ - Move context sensitive DPoR block checks to ConnectBlock, #922 (@tomasbrod).
+ - Check incoming blocks for malformed DPoR signature, #922.
+ - Corect tally height on init, #917 (@denravonska).
+ - Prevent staking of a block with a failed signature, #948 (@Foggyx420).
+ - Fix UI and RPC slowdown regression, #961 (@denravonska).
+ - Fix Debian lint errors, #886, #885, #884, #883 (@caraka).
+ - Fix fork issue due to research age calculation inconsistencies, #939
+   (@denravonska).
+ - Fix crashes when tallying, #934 (@denravonska).
+ - Revert reorganize of the chain trust becomes less than what it was, #957
+   (@tomasbrod).
+ - Fix sync issues with incorrectly accepted v8 beacons, #979 (@tomasbrod).
+
+### Changed
+  - Double check PoS kernel, #958 (@tomasbrod).
+  - Don't tally until V9 to speed up syncing, #943 (@denravonska).
+
+## [3.7.7.0] 2018-02-02
+### Fixed
+ - Beacon validation are now done when accepting blocks, not when receiving,
+   #899 (@denravonska).
+ - Fix crashes due to buffer overflow in encrypt/decrypt, #890 (@denravonska).
+ - Rewrite reorganize routine to be more reliable and drop contracts received
+   or issued while on a side chain to help reducing forks, #902 (@tomasbrod).
+
+## [3.7.6.0]
+Internal test version used to sort out the forks.
+
+## [3.7.5.0] 2018-01-24
+### Fixed
+ - Fix crash when switching to new tally on block 1144120, #868 (@denravonska).
+ - Fix crash when staking while tallying, #866 (@denravonska).
+
+## [3.7.4.0] 2018-01-20
+### Fixed
+ - Fix RPC resource leak regression. This also reduces RPC overhead,
+   making calls ~25-35% faster, #848 (@denravonska).
+ - Fix incorrect return code when forking, #832 (@denravonska).
+
+### Removed
+ - Remove upgrader option until rewritten, #836 (@Foggyx420).
+
+## [3.7.3.0] 2018-01-13
+### Fixed
+ - Fix for UI getting stuck in splash screen (@denravonska).
+
+## [3.7.2.0] 2018-01-13
+### Fixed
+ - Properly fix for wallet not daemonizing, #822 (@denravonska).
+
+## [3.7.1.0] 2018-01-10
+### Fixed
+ - Fix several crashes in diagnostic dialog, #816 (@Foggyx420).
+ - Fix client not exiting when running as daemon (@denravonska).
+ - Fix issue with boincstake.dll not updating on dirty installs (@Foggyx420).
+
+### Changed
+ - Update splash screen, #685 (acey1).
+
+## [3.7.0.0] 2018-01-08
 ### Added
  - Provide Difficulty of best kernel found, #766 (@tomasbrod).
  - Add Travis support for OSX, 665 (@acey1).
@@ -25,6 +143,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
    Missing rewards will be reimbursed, #552 (@Foggyx420).
  - Fix minor UI typos, #661 (@Erkan-Yilmaz).
  - Fix stake modifier, #686 (@tomasbrod).
+ - Improve boost-1.66.0 compatibility, #800 (@denravonska).
+ - Fix crash in diagnostics dialog, #794 (@Foggyx420).
 
 ### Changed
  - Changed versioning extraction from git. Test builds can no longer be used to
@@ -45,6 +165,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
  - Fix voting sorting issues, #610 (@MagixInTheAir).
  - Improve wallet backup, #610 (@Foggyx420).
  - Update seed nodes, #783 (@barton2526).
+ - Auto upgrades are now opt-in via the "autoupgrade" flag, #796 (@denravonska).
+ - Clean up seed nodes, #783 (@barton2526).
 
 ### Removed
  - Remove CSV exporter which used unreliable data, #759 (@denravonska).

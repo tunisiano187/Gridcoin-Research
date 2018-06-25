@@ -7,18 +7,18 @@
 
 #include <deque>
 #include <array>
+#include <boost/thread.hpp>
 #include <atomic>
 #include <openssl/rand.h>
 
+#include "netbase.h"
+#include "mruset.h"
+#include "protocol.h"
+#include "addrman.h"
 
 #ifndef WIN32
 #include <arpa/inet.h>
 #endif
-
-#include "mruset.h"
-#include "netbase.h"
-#include "protocol.h"
-#include "addrman.h"
 
 #include "gridcoin.h"
 class CRequestTracker;
@@ -104,6 +104,7 @@ public:
 };
 
 extern bool fDiscover;
+void Discover(boost::thread_group& threadGroup);
 extern bool fUseUPnP;
 extern uint64_t nLocalServices;
 extern uint64_t nLocalHostNonce;
@@ -222,7 +223,7 @@ public:
 	int nTrust;
 	////////////////////////
 
-	
+
 	//Block Flood attack Halford
 	int64_t nLastOrphan;
 	int nOrphanCount;
@@ -422,7 +423,7 @@ public:
         // the key is the earliest time the request can be sent
         int64_t& nRequestTime = mapAlreadyAskedFor[inv];
         if (fDebugNet)
-            printf("askfor %s   %" PRId64 " (%s)\n", inv.ToString().c_str(), nRequestTime, DateTimeStrFormat("%H:%M:%S", nRequestTime/1000000).c_str());
+            LogPrintf("askfor %s   %" PRId64 " (%s)", inv.ToString(), nRequestTime, DateTimeStrFormat("%H:%M:%S", nRequestTime/1000000));
 
         // Make sure not to reuse time indexes to keep things in the same order
         int64_t nNow = (GetAdjustedTime() - 1) * 1000000;
@@ -450,14 +451,14 @@ public:
         LEAVE_CRITICAL_SECTION(cs_vSend);
 
         if (fDebug10)
-            printf("(aborted)\n");
+            LogPrintf("(aborted)");
     }
 
     void EndMessage()
     {
         if (mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
         {
-            printf("dropmessages DROPPING SEND MESSAGE\n");
+            LogPrintf("dropmessages DROPPING SEND MESSAGE");
             AbortMessage();
             return;
         }
@@ -476,9 +477,9 @@ public:
         assert(ssSend.size () >= CMessageHeader::CHECKSUM_OFFSET + sizeof(nChecksum));
         memcpy((char*)&ssSend[CMessageHeader::CHECKSUM_OFFSET], &nChecksum, sizeof(nChecksum));
 
-        if (fDebug10) 
+        if (fDebug10)
 		{
-            printf("(%d bytes)\n", nSize);
+            LogPrintf("(%d bytes)", nSize);
         }
 
         std::deque<CSerializeData>::iterator it = vSendMsg.insert(vSendMsg.end(), CSerializeData());
@@ -498,8 +499,8 @@ public:
     void PushFields(T field)
     {
         ssSend << field;
-    }    
-    
+    }
+
     template<typename T, typename... Tfields>
     void PushFields(T field, Tfields... fields)
     {
@@ -520,7 +521,7 @@ public:
             throw;
         }
     }
-    
+
     template<typename... Args>
     void PushMessage(const char* pszCommand, Args... args)
     {
@@ -536,7 +537,7 @@ public:
             throw;
         }
     }
-    
+
     void PushRequest(const char* pszCommand,
                      void (*fn)(void*, CDataStream&), void* param1)
     {
