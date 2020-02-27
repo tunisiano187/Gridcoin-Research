@@ -641,7 +641,7 @@ bool TallyMagnitudesInSuperblock()
 bool AdvertiseBeacon(std::string &sOutPrivKey, std::string &sOutPubKey, std::string &sError, std::string &sMessage)
 {
     sOutPrivKey = "BUG! deprecated field used";
-    LOCK(cs_main);
+    LOCK2(cs_main, pwalletMain->cs_wallet);
     {
         if (!IsResearcher(GlobalCPUMiningCPID.cpid))
         {
