@@ -34,7 +34,7 @@ env:
 # Cross-Mac - Qt is disabled for now, since we cannot compile QtSVG with the SDK, also asm optimizations are disabled until we can straighten out scrypt .S files and Clang. Also the deploy stage is disabled until the qt5
 # can be figured out.
     - HOST=x86_64-apple-darwin11 PACKAGES="cmake imagemagick libcap-dev librsvg2-bin libz-dev libbz2-dev libtiff-tools python-dev" DEP_OPTS="NO_QT=1" GRIDCOIN_CONFIG="--enable-reduce-exports --disable-asm" OSX_SDK=10.11 RUN_TESTS=false GOAL=""
-    
+
 # Note windows builds may need xvfb package and NEED_XVFB=1 if NO_QT=1 is removed (i.e. QT build is enabled again).
 
 before_install:
